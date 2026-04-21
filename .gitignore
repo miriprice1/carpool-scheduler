@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets & local config (never commit these)
+config.json
+.env
+
+# Runtime state (persisted via Render disk in production)
+state.json
+
+# OS
+.DS_Store
+Thumbs.db

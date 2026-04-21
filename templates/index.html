@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>לוח נסיעות</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <!-- Leaflet.js for route map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+
+<div id="app">
+  <!-- ── HEADER ── -->
+  <header>
+    <h1>🚗 לוח נסיעות</h1>
+  </header>
+
+  <!-- ── TABS ── -->
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="weekly">📅 תכנון שבועי</button>
+    <button class="tab-btn" data-tab="monthly">📊 סיכום חודשי</button>
+    <button class="tab-btn" data-tab="history">📋 היסטוריה</button>
+  </nav>
+
+  <!-- ══════════════════════════════════════════════
+       TAB 1: WEEKLY SCHEDULER
+  ══════════════════════════════════════════════ -->
+  <div id="tab-weekly" class="tab-panel">
+
+    <!-- Week picker -->
+    <div class="week-picker-row">
+      <label for="weekStart">שבוע:</label>
+      <input type="date" id="weekStart" value="{{ default_week }}" />
+    </div>
+
+    <!-- WFH Grid -->
+    <section>
+      <h2>עבודה מהבית השבוע</h2>
+      <p class="section-note">* יום חופשה / מחלה יש לסמן גם כן כעבודה מהבית</p>
+      <div class="table-wrapper">
+        <table id="wfh-table">
+          <thead>
+            <tr>
+              <th>עובדת</th>
+              <th>ראשון</th><th>שני</th><th>שלישי</th><th>רביעי</th><th>חמישי</th>
+            </tr>
+          </thead>
+          <tbody id="wfh-tbody"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button id="btn-generate" class="btn-primary">צור לוח נסיעות</button>
+      </div>
+    </section>
+
+    <!-- Schedule output -->
+    <section id="schedule-section" class="hidden">
+      <div class="schedule-header">
+        <h2>לוח השבוע</h2>
+        <button id="btn-save" class="btn-success">שמור שבוע ✓</button>
+      </div>
+      <div id="toast" class="toast hidden"></div>
+      <!-- weekly-drivers-banner injected here by JS -->
+      <div id="schedule-days"></div>
+    </section>
+
+  </div><!-- /tab-weekly -->
+
+  <!-- ══════════════════════════════════════════════
+       TAB 2: MONTHLY SUMMARY
+  ══════════════════════════════════════════════ -->
+  <div id="tab-monthly" class="tab-panel hidden">
+
+    <section>
+      <div class="month-controls">
+        <h2>סיכום חודשי</h2>
+        <div class="month-nav">
+          <button id="btn-month-prev" class="btn-nav">‹</button>
+          <span id="month-label" class="month-label"></span>
+          <button id="btn-month-next" class="btn-nav">›</button>
+        </div>
+      </div>
+
+      <div id="monthly-calendar"></div>
+      <div id="drivers-summary"></div>
+    </section>
+
+  </div><!-- /tab-monthly -->
+
+  <!-- ══════════════════════════════════════════════
+       TAB 3: SCHEDULE HISTORY
+  ══════════════════════════════════════════════ -->
+  <div id="tab-history" class="tab-panel hidden">
+    <section>
+      <div class="history-header">
+        <h2>היסטוריה</h2>
+        <span class="history-subtitle">כל השבועות השמורים — לחץ להרחבה</span>
+      </div>
+      <div id="history-board"></div>
+    </section>
+  </div><!-- /tab-history -->
+
+</div><!-- /app -->
+
+<!-- ── ALERT MODAL ── -->
+<div id="alert-overlay" class="alert-overlay hidden">
+  <div class="alert-box">
+    <span id="alert-message"></span>
+    <button onclick="closeAlert()">אוקי</button>
+  </div>
+</div>
+
+<!-- ── FAIRNESS WARNING MODAL ── -->
+<div id="fairness-overlay" class="alert-overlay hidden">
+  <div class="alert-box fairness-box">
+    <div class="fairness-icon">⚖️</div>
+    <strong class="fairness-title">שים לב: החלפה לא הוגנת!</strong>
+    <p class="fairness-msg">
+      ל-<span id="f-losing-name"></span> יש <span id="f-losing-count"></span> נסיעות
+      — ל-<span id="f-gaining-name"></span> יש <span id="f-gaining-count"></span> נסיעות.
+      <br/>החלפה זו תעביר מישהי עם פחות נסיעות לתחבורה ציבורית.
+    </p>
+    <div class="fairness-actions">
+      <button id="btn-fairness-proceed" class="btn-warning">המשך בכל זאת</button>
+      <button id="btn-fairness-cancel" class="btn-primary">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CHANGE DRIVER MODAL ── -->
+<div id="change-driver-overlay" class="alert-overlay hidden">
+  <div class="alert-box">
+    <strong>החלפת נהגת שבועית</strong>
+    <p id="change-driver-msg" style="font-size:0.9rem;color:#57606a;"></p>
+    <div id="change-driver-options" class="driver-options"></div>
+    <button onclick="closeChangeDriver()" class="btn-cancel-sm">ביטול</button>
+  </div>
+</div>
+
+<!-- ── ROUTE MAP MODAL ── -->
+<div id="map-overlay" class="alert-overlay hidden">
+  <div class="map-box">
+    <div class="map-header">
+      <span id="map-title" class="map-title"></span>
+      <div class="map-header-actions">
+        <a id="map-gmaps-link" href="#" target="_blank" rel="noopener" class="btn-gmaps">
+          🗺 פתח ב-Google Maps
+        </a>
+        <button class="map-close-btn" onclick="closeMap()">✕</button>
+      </div>
+    </div>
+    <div id="map-container"></div>
+    <div id="map-legend" class="map-legend"></div>
+  </div>
+</div>
+
+<script src="/static/drag.js"></script>
+</body>
+</html>
