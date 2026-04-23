@@ -329,9 +329,10 @@ function buildDayBlock(day, dayIdx, readOnly, blockDriverIds = null) {
       ? buildCarCardReadOnly(car, blockDriverIds, day.date)
       : buildCarCard(car, carIdx, dayIdx, day.date));
   });
-  body.appendChild(readOnly
-    ? buildZoneReadOnly("🚌 תחבורה ציבורית", day.public_transport)
-    : buildPtZone(day.public_transport, dayIdx));
+  if (day.public_transport && day.public_transport.length > 0)
+    body.appendChild(readOnly
+      ? buildZoneReadOnly("🚌 תחבורה ציבורית", day.public_transport)
+      : buildPtZone(day.public_transport, dayIdx));
 
   if (day.wfh && day.wfh.length > 0)
     body.appendChild(buildWfhZone(day.wfh));
@@ -742,7 +743,8 @@ function rerenderDay(dayIdx) {
   const body  = block.querySelector(".day-body");
   body.innerHTML = "";
   day.cars.forEach((car, carIdx) => body.appendChild(buildCarCard(car, carIdx, dayIdx, day.date)));
-  body.appendChild(buildPtZone(day.public_transport, dayIdx));
+  if (day.public_transport && day.public_transport.length > 0)
+    body.appendChild(buildPtZone(day.public_transport, dayIdx));
   if (day.wfh && day.wfh.length > 0) body.appendChild(buildWfhZone(day.wfh));
 }
 
