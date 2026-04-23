@@ -138,7 +138,11 @@ function buildWfhGrid() {
   allEmployees.forEach(emp => {
     const tr     = document.createElement("tr");
     const nameTd = document.createElement("td");
-    nameTd.textContent = emp.name;
+    nameTd.style.cssText = "display:flex;align-items:center;gap:8px;";
+    nameTd.appendChild(makeAvatarEl(emp, 26));
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = emp.name;
+    nameTd.appendChild(nameSpan);
     tr.appendChild(nameTd);
 
     dates.forEach(dateStr => {
