@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from datetime import date, timedelta
 
 from flask import Flask, jsonify, render_template, request
@@ -38,6 +39,11 @@ def load_employees() -> list[Employee]:
         )
         for e in data
     ]
+
+
+def save_employees(employees: list[Employee]) -> None:
+    with open(EMPLOYEES_FILE, "w", encoding="utf-8") as f:
+        json.dump([e.to_dict() for e in employees], f, indent=2, ensure_ascii=False)
 
 
 def load_config() -> dict:
@@ -322,6 +328,63 @@ def api_history():
     drivers_summary.sort(key=lambda d: -d["total_drives"])
 
     return jsonify({"history": history, "drivers_summary": drivers_summary})
+
+
+@app.route("/api/config-public")
+def api_config_public():
+    config = load_config()
+    return jsonify({"google_maps_api_key": config.get("google_maps_api_key", "")})
+
+
+@app.route("/api/employees", methods=["POST"])
+def api_add_employee():
+    body      = request.get_json()
+    employees = load_employees()
+    new_name  = (body.get("name") or "").strip()
+
+    if not new_name:
+        return jsonify({"ok": False, "error": "נדרש שם"}), 400
+
+    emp = Employee(
+        id=str(uuid.uuid4()),
+        name=new_name,
+        is_driver=bool(body.get("is_driver", False)),
+        address=body.get("address", ""),
+        lat=float(body.get("lat") or 0.0),
+        lng=float(body.get("lng") or 0.0),
+    )
+    employees.append(emp)
+    save_employees(employees)
+    return jsonify({"ok": True, "employee": emp.to_dict()})
+
+
+@app.route("/api/employees/<emp_id>", methods=["PUT"])
+def api_edit_employee(emp_id):
+    body      = request.get_json()
+    employees = load_employees()
+    idx       = next((i for i, e in enumerate(employees) if e.id == emp_id), None)
+    if idx is None:
+        return jsonify({"ok": False, "error": "עובד לא נמצא"}), 404
+
+    e          = employees[idx]
+    e.name     = (body.get("name") or e.name).strip()
+    e.is_driver = bool(body.get("is_driver", e.is_driver))
+    e.address  = body.get("address", e.address)
+    e.lat      = float(body.get("lat") or e.lat)
+    e.lng      = float(body.get("lng") or e.lng)
+    employees[idx] = e
+    save_employees(employees)
+    return jsonify({"ok": True, "employee": e.to_dict()})
+
+
+@app.route("/api/employees/<emp_id>", methods=["DELETE"])
+def api_delete_employee(emp_id):
+    employees = load_employees()
+    new_list  = [e for e in employees if e.id != emp_id]
+    if len(new_list) == len(employees):
+        return jsonify({"ok": False, "error": "עובד לא נמצא"}), 404
+    save_employees(new_list)
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

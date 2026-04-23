@@ -80,16 +80,8 @@
     "lng": 0.0
   },
   {
-    "id": "karen",
-    "name": "Karen",
-    "is_driver": false,
-    "address": "",
-    "lat": 0.0,
-    "lng": 0.0
-  },
-  {
     "id": "leo",
-    "name": "Leo",
+    "name": "Leoטטטט",
     "is_driver": false,
     "address": "",
     "lat": 0.0,
@@ -102,5 +94,13 @@
     "address": "",
     "lat": 0.0,
     "lng": 0.0
+  },
+  {
+    "id": "0420bbec-4101-4db5-88bd-1302fe97996d",
+    "name": "מירי פרייס",
+    "is_driver": true,
+    "address": "נתיבות המשפט 66, מודיעין עילית",
+    "lat": 31.9258715,
+    "lng": 35.0439535
   }
 ]

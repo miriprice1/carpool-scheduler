@@ -22,6 +22,7 @@
     <button class="tab-btn active" data-tab="weekly">📅 תכנון שבועי</button>
     <button class="tab-btn" data-tab="monthly">📊 סיכום חודשי</button>
     <button class="tab-btn" data-tab="history">📋 היסטוריה</button>
+    <button class="tab-btn" data-tab="employees">👥 עובדים</button>
   </nav>
 
   <!-- ══════════════════════════════════════════════
@@ -102,6 +103,31 @@
     </section>
   </div><!-- /tab-history -->
 
+  <!-- ══════════════════════════════════════════════
+       TAB 4: EMPLOYEES MANAGEMENT
+  ══════════════════════════════════════════════ -->
+  <div id="tab-employees" class="tab-panel hidden">
+    <section>
+      <div class="employees-header">
+        <h2>ניהול עובדים</h2>
+        <button class="btn-primary" onclick="openEmployeeModal(null)">+ הוסף עובד/ת</button>
+      </div>
+      <div class="table-wrapper">
+        <table id="employees-table">
+          <thead>
+            <tr>
+              <th>שם</th>
+              <th>נהגת</th>
+              <th>כתובת</th>
+              <th>פעולות</th>
+            </tr>
+          </thead>
+          <tbody id="employees-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div><!-- /tab-employees -->
+
 </div><!-- /app -->
 
 <!-- ── ALERT MODAL ── -->
@@ -153,6 +179,31 @@
     </div>
     <div id="map-container"></div>
     <div id="map-legend" class="map-legend"></div>
+  </div>
+</div>
+
+<!-- ── EMPLOYEE ADD/EDIT MODAL ── -->
+<div id="employee-overlay" class="alert-overlay hidden">
+  <div class="alert-box employee-box">
+    <strong id="employee-modal-title">הוספת עובד/ת</strong>
+    <form id="employee-form" onsubmit="return false">
+      <div class="form-group">
+        <label for="emp-name">שם</label>
+        <input type="text" id="emp-name" placeholder="שם מלא" autocomplete="off" />
+      </div>
+      <div class="form-group form-check">
+        <label><input type="checkbox" id="emp-is-driver" /> נהגת</label>
+      </div>
+      <div class="form-group address-field-wrap">
+        <label for="emp-address">כתובת</label>
+        <input type="text" id="emp-address" placeholder="התחל להקליד כתובת..." autocomplete="off" />
+        <div id="address-suggestions" class="address-suggestions hidden"></div>
+      </div>
+    </form>
+    <div class="employee-actions">
+      <button class="btn-primary" onclick="saveEmployee()">שמור</button>
+      <button class="btn-cancel-sm" onclick="closeEmployeeModal()">ביטול</button>
+    </div>
   </div>
 </div>
 

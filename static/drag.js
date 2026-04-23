@@ -26,6 +26,13 @@ let dragSourceSlot = null;
 
 let mapInstance = null;
 
+let googleMapsApiKey  = "";
+let googleMapsLoaded  = false;
+let placesAutocomplete = null;
+let empLat = 0.0;
+let empLng = 0.0;
+let geocodeTimer = null;
+
 const DAY_NAMES = ["ראשון","שני","שלישי","רביעי","חמישי"];
 
 // Google Maps pin SVG icon (used on route buttons)
@@ -38,13 +45,25 @@ const MONTH_NAMES = [
 // ── Bootstrap ──────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
-  [allEmployees] = await Promise.all([
+  const [employees, , cfg] = await Promise.all([
     fetch("/api/employees").then(r => r.json()),
     fetch("/api/state").then(r => r.json()).then(s => {
       seatCounts = s.seat_counts || {};
       weekCounts = s.week_counts || {};
     }),
+    fetch("/api/config-public").then(r => r.json()),
   ]);
+  allEmployees     = employees;
+  googleMapsApiKey = cfg.google_maps_api_key || "";
+
+  if (googleMapsApiKey) {
+    window._onGoogleMapsLoaded = () => { googleMapsLoaded = true; };
+    const s = document.createElement("script");
+    s.src   = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=_onGoogleMapsLoaded`;
+    s.async = true;
+    document.head.appendChild(s);
+  }
+
   buildWfhGrid();
 
   document.getElementById("btn-generate").addEventListener("click", generateSchedule);
@@ -67,8 +86,9 @@ function switchTab(tabId) {
   document.querySelectorAll(".tab-panel").forEach(p =>
     p.classList.toggle("hidden", p.id !== `tab-${tabId}`)
   );
-  if (tabId === "monthly") loadMonthlyView();
-  if (tabId === "history") loadHistoryView();
+  if (tabId === "monthly")   loadMonthlyView();
+  if (tabId === "history")   loadHistoryView();
+  if (tabId === "employees") loadEmployeesTab();
 }
 
 // ── WFH Grid ──────────────────────────────────────────────────
@@ -1193,4 +1213,181 @@ function showToast(msg, isError = false) {
   toast.className = "toast" + (isError ? " error" : "");
   toast.classList.remove("hidden");
   setTimeout(() => toast.classList.add("hidden"), 3500);
+}
+
+// ── Employees tab ──────────────────────────────────────────────
+
+let editingEmployeeId = null;
+
+async function loadEmployeesTab() {
+  const employees = await fetch("/api/employees").then(r => r.json());
+  allEmployees = employees;
+  renderEmployeesTable(employees);
+}
+
+function renderEmployeesTable(employees) {
+  const tbody = document.getElementById("employees-tbody");
+  tbody.innerHTML = "";
+  employees.forEach(emp => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${emp.name}</td>
+      <td style="text-align:center">${emp.is_driver ? "✓" : ""}</td>
+      <td style="font-size:.85rem;color:#57606a">${emp.address || "—"}</td>
+      <td class="emp-actions-cell"></td>
+    `;
+    const cell = tr.querySelector(".emp-actions-cell");
+
+    const editBtn = document.createElement("button");
+    editBtn.className   = "btn-emp-edit";
+    editBtn.textContent = "עריכה";
+    editBtn.addEventListener("click", () => openEmployeeModal(emp));
+    cell.appendChild(editBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.className   = "btn-emp-delete";
+    delBtn.textContent = "מחיקה";
+    delBtn.addEventListener("click", () => deleteEmployee(emp.id, emp.name));
+    cell.appendChild(delBtn);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function openEmployeeModal(emp) {
+  editingEmployeeId = emp ? emp.id : null;
+  const isEdit      = !!emp;
+
+  document.getElementById("employee-modal-title").textContent =
+    isEdit ? `עריכת ${emp.name}` : "הוספת עובד/ת";
+
+  document.getElementById("emp-name").value         = emp ? emp.name          : "";
+  document.getElementById("emp-is-driver").checked  = emp ? emp.is_driver     : false;
+  document.getElementById("emp-address").value      = emp ? (emp.address || "") : "";
+  empLat = emp ? (emp.lat || 0.0) : 0.0;
+  empLng = emp ? (emp.lng || 0.0) : 0.0;
+
+  document.getElementById("employee-overlay").classList.remove("hidden");
+  document.getElementById("emp-name").focus();
+  setTimeout(initAddressField, 60);
+}
+
+function closeEmployeeModal() {
+  document.getElementById("employee-overlay").classList.add("hidden");
+  document.getElementById("emp-address").removeEventListener("input", onAddressInput);
+  if (placesAutocomplete && window.google && window.google.maps) {
+    window.google.maps.event.clearInstanceListeners(placesAutocomplete);
+    placesAutocomplete = null;
+  }
+  hideSuggestions();
+  clearTimeout(geocodeTimer);
+  editingEmployeeId = null;
+}
+
+async function saveEmployee() {
+  const name     = document.getElementById("emp-name").value.trim();
+  const isDriver = document.getElementById("emp-is-driver").checked;
+  const address  = document.getElementById("emp-address").value.trim();
+
+  if (!name) { showAlert("נא להזין שם"); return; }
+
+  const body   = { name, is_driver: isDriver, address, lat: empLat, lng: empLng };
+  const isEdit = !!editingEmployeeId;
+  const url    = isEdit ? `/api/employees/${encodeURIComponent(editingEmployeeId)}` : "/api/employees";
+  const method = isEdit ? "PUT" : "POST";
+
+  const resp   = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = await resp.json();
+
+  if (!result.ok) { showAlert(result.error || "שגיאה"); return; }
+
+  closeEmployeeModal();
+  showToast(isEdit ? `${name} עודכן/ה ✓` : `${name} נוסף/ה ✓`, false);
+  await loadEmployeesTab();
+  buildWfhGrid();
+}
+
+async function deleteEmployee(empId, empName) {
+  if (!confirm(`למחוק את ${empName}?`)) return;
+
+  const resp   = await fetch(`/api/employees/${encodeURIComponent(empId)}`, { method: "DELETE" });
+  const result = await resp.json();
+
+  if (!result.ok) { showAlert(result.error || "שגיאה במחיקה"); return; }
+
+  showToast(`${empName} נמחק/ה ✓`, false);
+  await loadEmployeesTab();
+  buildWfhGrid();
+}
+
+// ── Address autocomplete ───────────────────────────────────────
+
+function initAddressField() {
+  const input = document.getElementById("emp-address");
+  input.removeEventListener("input", onAddressInput);
+  hideSuggestions();
+  clearTimeout(geocodeTimer);
+
+  if (googleMapsLoaded && window.google && window.google.maps && window.google.maps.places) {
+    if (placesAutocomplete) {
+      window.google.maps.event.clearInstanceListeners(placesAutocomplete);
+    }
+    placesAutocomplete = new window.google.maps.places.Autocomplete(input, {
+      fields: ["geometry", "formatted_address"],
+    });
+    placesAutocomplete.addListener("place_changed", () => {
+      const place = placesAutocomplete.getPlace();
+      if (place.geometry) {
+        empLat = place.geometry.location.lat();
+        empLng = place.geometry.location.lng();
+        if (place.formatted_address) input.value = place.formatted_address;
+      }
+    });
+  } else {
+    input.addEventListener("input", onAddressInput);
+    input.addEventListener("blur", () => setTimeout(hideSuggestions, 200));
+  }
+}
+
+function onAddressInput() {
+  clearTimeout(geocodeTimer);
+  const q = document.getElementById("emp-address").value.trim();
+  if (q.length < 3) { hideSuggestions(); return; }
+  geocodeTimer = setTimeout(() => fetchNominatimSuggestions(q), 650);
+}
+
+async function fetchNominatimSuggestions(query) {
+  try {
+    const url     = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
+    const results = await fetch(url).then(r => r.json());
+    showSuggestions(results);
+  } catch { hideSuggestions(); }
+}
+
+function showSuggestions(results) {
+  const box = document.getElementById("address-suggestions");
+  box.innerHTML = "";
+  if (!results.length) { hideSuggestions(); return; }
+  results.forEach(r => {
+    const item = document.createElement("div");
+    item.className   = "address-suggestion-item";
+    item.textContent = r.display_name;
+    item.addEventListener("mousedown", () => {
+      document.getElementById("emp-address").value = r.display_name;
+      empLat = parseFloat(r.lat);
+      empLng = parseFloat(r.lon);
+      hideSuggestions();
+    });
+    box.appendChild(item);
+  });
+  box.classList.remove("hidden");
+}
+
+function hideSuggestions() {
+  const box = document.getElementById("address-suggestions");
+  if (box) box.classList.add("hidden");
 }
