@@ -32,6 +32,7 @@ let placesAutocomplete = null;
 let empLat = 0.0;
 let empLng = 0.0;
 let geocodeTimer = null;
+let pendingImageFile = null;
 
 const DAY_NAMES = ["ראשון","שני","שלישי","רביעי","חמישי"];
 
@@ -75,6 +76,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   );
 
   initMonthlyTab();
+
+  document.getElementById("emp-image-file").addEventListener("change", function () {
+    const file = this.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showAlert("הקובץ גדול מדי (מקסימום 5MB)");
+      this.value = "";
+      return;
+    }
+    pendingImageFile = file;
+    const previewWrap = document.getElementById("emp-avatar-preview");
+    previewWrap.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(file);
+    img.style.cssText = "width:56px;height:56px;object-fit:cover;border-radius:50%;display:block;";
+    previewWrap.appendChild(img);
+  });
 });
 
 // ── Tab switching ──────────────────────────────────────────────
@@ -553,6 +571,31 @@ function buildWfhZone(wfhList) {
   return zone;
 }
 
+// ── Avatar helpers ─────────────────────────────────────────────
+
+function _avatarColor(name) {
+  const palette = ["#0969da","#1a7f37","#9a3412","#6f42c1","#0550ae","#bf8700","#24292f","#cf222e"];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function makeAvatarEl(emp, sizePx) {
+  const wrap = document.createElement("div");
+  wrap.className = "emp-avatar";
+  wrap.style.cssText = `width:${sizePx}px;height:${sizePx}px;font-size:${Math.round(sizePx * 0.38)}px;background:${_avatarColor(emp.name)};`;
+  const initials = (emp.name || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("");
+  wrap.dataset.initials = initials;
+
+  const img = document.createElement("img");
+  img.src = `/api/employees/${encodeURIComponent(emp.id)}/image`;
+  img.alt = emp.name;
+  img.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;";
+  img.addEventListener("error", () => { img.remove(); wrap.classList.add("emp-avatar--initials"); });
+  wrap.appendChild(img);
+  return wrap;
+}
+
 // ── Employee card ──────────────────────────────────────────────
 
 function makeCard(emp, isDriver, isSubstitute = false) {
@@ -566,8 +609,12 @@ function makeCard(emp, isDriver, isSubstitute = false) {
   card.dataset.empName  = emp.name;
   card.dataset.isDriver = emp.is_driver ? "1" : "0";
 
-  const icon = isSubstitute ? "🔄 " : (isDriver ? "🚗 " : "");
-  card.textContent = icon + emp.name + (isSubstitute ? " (מחליפה)" : "");
+  card.appendChild(makeAvatarEl(emp, 24));
+  const label = document.createElement("span");
+  const icon  = isSubstitute ? "🔄 " : (isDriver ? "🚗 " : "");
+  label.textContent = icon + emp.name + (isSubstitute ? " (מחליפה)" : "");
+  card.appendChild(label);
+
   setupDrag(card);
   return card;
 }
@@ -1232,12 +1279,17 @@ function renderEmployeesTable(employees) {
   tbody.innerHTML = "";
   employees.forEach(emp => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `
+
+    const avatarTd = document.createElement("td");
+    avatarTd.appendChild(makeAvatarEl(emp, 36));
+    tr.appendChild(avatarTd);
+
+    tr.insertAdjacentHTML("beforeend", `
       <td>${emp.name}</td>
       <td style="text-align:center">${emp.is_driver ? "✓" : ""}</td>
       <td style="font-size:.85rem;color:#57606a">${emp.address || "—"}</td>
       <td class="emp-actions-cell"></td>
-    `;
+    `);
     const cell = tr.querySelector(".emp-actions-cell");
 
     const editBtn = document.createElement("button");
@@ -1269,12 +1321,28 @@ function openEmployeeModal(emp) {
   empLat = emp ? (emp.lat || 0.0) : 0.0;
   empLng = emp ? (emp.lng || 0.0) : 0.0;
 
+  pendingImageFile = null;
+  document.getElementById("emp-image-file").value = "";
+  const previewWrap = document.getElementById("emp-avatar-preview");
+  previewWrap.innerHTML = "";
+  if (emp) {
+    previewWrap.appendChild(makeAvatarEl(emp, 56));
+  } else {
+    const ph = document.createElement("div");
+    ph.className = "emp-avatar emp-avatar--initials";
+    ph.style.cssText = "width:56px;height:56px;font-size:22px;background:#e8ecef;";
+    ph.dataset.initials = "?";
+    previewWrap.appendChild(ph);
+  }
+
   document.getElementById("employee-overlay").classList.remove("hidden");
   document.getElementById("emp-name").focus();
   setTimeout(initAddressField, 60);
 }
 
 function closeEmployeeModal() {
+  pendingImageFile = null;
+  document.getElementById("emp-image-file").value = "";
   document.getElementById("employee-overlay").classList.add("hidden");
   document.getElementById("emp-address").removeEventListener("input", onAddressInput);
   if (placesAutocomplete && window.google && window.google.maps) {
@@ -1306,6 +1374,19 @@ async function saveEmployee() {
   const result = await resp.json();
 
   if (!result.ok) { showAlert(result.error || "שגיאה"); return; }
+
+  const empId = result.employee.id;
+
+  if (pendingImageFile) {
+    const fd = new FormData();
+    fd.append("image", pendingImageFile);
+    const ir = await fetch(`/api/employees/${encodeURIComponent(empId)}/image`, {
+      method: "POST",
+      body: fd,
+    });
+    const iResult = await ir.json();
+    if (!iResult.ok) showToast("העובד/ת נשמר/ה, אך העלאת התמונה נכשלה", true);
+  }
 
   closeEmployeeModal();
   showToast(isEdit ? `${name} עודכן/ה ✓` : `${name} נוסף/ה ✓`, false);

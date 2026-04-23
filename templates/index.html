@@ -116,6 +116,7 @@
         <table id="employees-table">
           <thead>
             <tr>
+              <th>תמונה</th>
               <th>שם</th>
               <th>נהגת</th>
               <th>כתובת</th>
@@ -187,6 +188,17 @@
   <div class="alert-box employee-box">
     <strong id="employee-modal-title">הוספת עובד/ת</strong>
     <form id="employee-form" onsubmit="return false">
+      <div class="form-group emp-photo-group">
+        <label>תמונה</label>
+        <div class="emp-photo-wrap">
+          <div id="emp-avatar-preview"></div>
+          <div class="emp-photo-actions">
+            <label for="emp-image-file" class="btn-upload-photo">בחר תמונה</label>
+            <input type="file" id="emp-image-file" accept="image/jpeg,image/png,image/webp" class="hidden" />
+            <span class="emp-photo-hint">jpg / png / webp · עד 5MB</span>
+          </div>
+        </div>
+      </div>
       <div class="form-group">
         <label for="emp-name">שם</label>
         <input type="text" id="emp-name" placeholder="שם מלא" autocomplete="off" />

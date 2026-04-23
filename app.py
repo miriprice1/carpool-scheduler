@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import date, timedelta
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 
 from models import CarAssignment, DaySchedule, Employee
 from scheduler import CARS, apply_week, schedule_week, validate_move, week_dates
@@ -17,6 +17,9 @@ CONFIG_FILE    = os.path.join(BASE_DIR, "config.json")
 # Locally, state.json sits next to app.py (BASE_DIR).
 DATA_DIR   = os.environ.get("DATA_DIR", BASE_DIR)
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+
+ALLOWED_IMAGE_EXTS = {"jpg", "jpeg", "png", "webp"}
 
 app = Flask(__name__)
 
@@ -39,6 +42,14 @@ def load_employees() -> list[Employee]:
         )
         for e in data
     ]
+
+
+def _find_image_path(emp_id: str) -> str | None:
+    for ext in ALLOWED_IMAGE_EXTS:
+        p = os.path.join(UPLOAD_DIR, f"{emp_id}.{ext}")
+        if os.path.exists(p):
+            return p
+    return None
 
 
 def save_employees(employees: list[Employee]) -> None:
@@ -384,7 +395,58 @@ def api_delete_employee(emp_id):
     if len(new_list) == len(employees):
         return jsonify({"ok": False, "error": "עובד לא נמצא"}), 404
     save_employees(new_list)
+    img = _find_image_path(emp_id)
+    if img:
+        os.remove(img)
     return jsonify({"ok": True})
+
+
+@app.route("/api/employees/<emp_id>/image")
+def api_employee_image(emp_id):
+    path = _find_image_path(emp_id)
+    if not path:
+        return "", 404
+    ext  = path.rsplit(".", 1)[1].lower()
+    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "png": "image/png",  "webp": "image/webp"}[ext]
+    return send_file(path, mimetype=mime, max_age=86400)
+
+
+@app.route("/api/employees/<emp_id>/image", methods=["POST"])
+def api_upload_employee_image(emp_id):
+    employees = load_employees()
+    if not any(e.id == emp_id for e in employees):
+        return jsonify({"ok": False, "error": "עובד לא נמצא"}), 404
+
+    if "image" not in request.files:
+        return jsonify({"ok": False, "error": "לא נשלח קובץ"}), 400
+
+    file = request.files["image"]
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "קובץ ריק"}), 400
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ALLOWED_IMAGE_EXTS:
+        return jsonify({"ok": False, "error": "סוג קובץ לא נתמך (jpg/png/webp בלבד)"}), 400
+
+    data = file.read()
+    if len(data) > 5 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "הקובץ גדול מדי (מקסימום 5MB)"}), 400
+
+    if ext == "jpeg":
+        ext = "jpg"
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    for old_ext in ALLOWED_IMAGE_EXTS:
+        old_path = os.path.join(UPLOAD_DIR, f"{emp_id}.{old_ext}")
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    with open(os.path.join(UPLOAD_DIR, f"{emp_id}.{ext}"), "wb") as f:
+        f.write(data)
+
+    return jsonify({"ok": True, "image_url": f"/api/employees/{emp_id}/image"})
 
 
 if __name__ == "__main__":
